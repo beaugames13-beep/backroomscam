@@ -147,7 +147,14 @@ public class BackroomsCamClient implements ClientModInitializer {
             try {
                 ex.execute(() -> {
                     try {
-                        writer.addPng(image.asByteArray());
+                        // NativeImage can write itself as a PNG file; read that back as bytes.
+                        Path tmp = Files.createTempFile("camcorder", ".png");
+                        try {
+                            image.writeToFile(tmp);
+                            writer.addPng(Files.readAllBytes(tmp));
+                        } finally {
+                            Files.deleteIfExists(tmp);
+                        }
                     } catch (Exception ignored) {
                     } finally {
                         image.close();
