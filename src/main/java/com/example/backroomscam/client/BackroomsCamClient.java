@@ -6,7 +6,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.event.player.*;
-import net.minecraft.Util;
+import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.network.chat.Component;
@@ -99,7 +99,7 @@ public class BackroomsCamClient implements ClientModInitializer {
 
     private void captureFrame(Minecraft mc) {
         final Path out = recDir.resolve(String.format("frame_%05d.png", ++frame));
-        Screenshot.takeScreenshot(mc.getMainRenderTarget(), image -> Util.ioPool().execute(() -> {
+        Screenshot.takeScreenshot(mc.getMainRenderTarget(), image -> CompletableFuture.runAsync(() -> {
             try { image.writeToFile(out); }
             catch (IOException ignored) { }
             finally { image.close(); }
