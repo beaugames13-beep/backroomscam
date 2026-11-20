@@ -6,7 +6,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.event.player.*;
-import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.network.chat.Component;
@@ -19,14 +18,26 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class BackroomsCamClient implements ClientModInitializer {
+    // Video settings: a frame every TICKS_PER_FRAME game ticks (20 ticks/sec). 2 -> 10 fps, 1 -> 20 fps.
+    static final int TICKS_PER_FRAME = 2;
+    static final int FPS = 20 / TICKS_PER_FRAME;
+
     public static boolean cameraUp = false;   // camera raised (zoomed, overlay on)
     public static boolean recording = false;
     public static float zoom = 0f;            // 0..1, smoothed
     public static long recStartMs = 0;
-    static int recTicks = 0, frame = 0;
-    static Path recDir;
+
+    static int recTicks = 0;
+    static Path recFile;
+    static AviWriter avi;
+    static ExecutorService encoder;
+    static final AtomicInteger pending = new AtomicInteger();
     static boolean prevUse = false, prevAttack = false;
 
     static boolean holding(Player p) {
@@ -72,7 +83,7 @@ public class BackroomsCamClient implements ClientModInitializer {
 
         zoom += ((cameraUp ? 1f : 0f) - zoom) * 0.3f;
 
-        if (recording && cameraUp && ++recTicks % 2 == 0) { // ~10 fps
+        if (recording && cameraUp && ++recTicks % TICKS_PER_FRAME == 0) {
             captureFrame(mc);
         }
     }
@@ -80,9 +91,17 @@ public class BackroomsCamClient implements ClientModInitializer {
     private void startRecording(Minecraft mc) {
         try {
             String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
-            recDir = mc.gameDirectory.toPath().resolve("camcorder").resolve("rec_" + stamp);
-            Files.createDirectories(recDir);
-            frame = 0; recTicks = 0;
+            Path dir = mc.gameDirectory.toPath().resolve("camcorder");
+            Files.createDirectories(dir);
+            recFile = dir.resolve("rec_" + stamp + ".avi");
+            avi = new AviWriter(recFile, FPS);
+            encoder = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "camcorder-encoder");
+                t.setDaemon(true);
+                return t;
+            });
+            pending.set(0);
+            recTicks = 0;
             recStartMs = System.currentTimeMillis();
             recording = true;
         } catch (IOException e) {
@@ -92,17 +111,53 @@ public class BackroomsCamClient implements ClientModInitializer {
 
     private void stopRecording(Minecraft mc) {
         recording = false;
-        if (mc.player != null) {
-            mc.player.displayClientMessage(Component.literal("Saved " + frame + " frames to " + recDir), false);
-        }
+        final AviWriter writer = avi;
+        final ExecutorService ex = encoder;
+        final Path file = recFile;
+        avi = null;
+        encoder = null;
+        if (writer == null || ex == null) return;
+
+        // Runs after every queued frame has been encoded, then finalizes the video file.
+        ex.execute(() -> {
+            String msg;
+            try {
+                writer.close();
+                msg = writer.frameCount() > 0
+                        ? "Saved video (" + writer.frameCount() + " frames): " + file
+                        : "Camcorder: recording was empty, nothing saved";
+            } catch (IOException e) {
+                msg = "Camcorder: failed to save video (" + e.getMessage() + ")";
+            }
+            final String finalMsg = msg;
+            mc.execute(() -> {
+                if (mc.player != null) mc.player.displayClientMessage(Component.literal(finalMsg), false);
+            });
+        });
+        ex.shutdown();
     }
 
     private void captureFrame(Minecraft mc) {
-        final Path out = recDir.resolve(String.format("frame_%05d.png", ++frame));
-        Screenshot.takeScreenshot(mc.getMainRenderTarget(), image -> CompletableFuture.runAsync(() -> {
-            try { image.writeToFile(out); }
-            catch (IOException ignored) { }
-            finally { image.close(); }
-        }));
+        if (pending.get() > 8) return; // encoder is behind; skip a frame instead of eating memory
+        final AviWriter writer = avi;
+        final ExecutorService ex = encoder;
+        if (writer == null || ex == null) return;
+        pending.incrementAndGet();
+        Screenshot.takeScreenshot(mc.getMainRenderTarget(), image -> {
+            try {
+                ex.execute(() -> {
+                    try {
+                        writer.addPng(image.asByteArray());
+                    } catch (Exception ignored) {
+                    } finally {
+                        image.close();
+                        pending.decrementAndGet();
+                    }
+                });
+            } catch (RejectedExecutionException e) { // recording already stopped
+                image.close();
+                pending.decrementAndGet();
+            }
+        });
     }
 }
