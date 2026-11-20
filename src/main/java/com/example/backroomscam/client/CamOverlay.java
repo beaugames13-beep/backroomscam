@@ -44,9 +44,14 @@ public class CamOverlay {
             if ((System.currentTimeMillis() / 500) % 2 == 0) g.fill(m + 8, m + 10, m + 16, m + 18, RED);
             g.drawString(mc.font, "REC", m + 22, m + 10, RED);
             g.drawString(mc.font, String.format("%02d:%02d", s / 60, s % 60), m + 8, m + 24, WHITE);
+            g.drawString(mc.font, BackroomsCamClient.micOn ? "MIC ON" : "NO MIC", m + 8, m + 38, WHITE);
         } else {
             g.drawString(mc.font, "STBY", m + 8, m + 10, WHITE);
         }
+
+        // bottom-right zoom readout
+        String zoomText = String.format("ZOOM %.1fx", 1.0f / BackroomsCamClient.fovMultiplier());
+        g.drawString(mc.font, zoomText, w - m - 8 - mc.font.width(zoomText), h - m - 14, WHITE);
 
         // top-right battery
         g.drawString(mc.font, "BAT [|||]", w - m - 56, m + 10, WHITE);

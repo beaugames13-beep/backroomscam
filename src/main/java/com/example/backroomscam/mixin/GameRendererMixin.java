@@ -10,6 +10,6 @@ import org.spongepowered.asm.mixin.injection.At;
 public abstract class GameRendererMixin {
     @ModifyReturnValue(method = "getFov", at = @At("RETURN"))
     private float backroomscam$zoom(float original) {
-        return original * (1.0f - 0.65f * BackroomsCamClient.zoom);
+        return original * BackroomsCamClient.fovMultiplier();
     }
 }
