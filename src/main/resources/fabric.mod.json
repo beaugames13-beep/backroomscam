@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "backroomscam",
+  "version": "1.0.0",
+  "name": "Backrooms Camcorder",
+  "description": "A VHS-style camcorder. Right-click to raise it, left-click to record.",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.example.backroomscam.BackroomsCam"],
+    "client": ["com.example.backroomscam.client.BackroomsCamClient"]
+  },
+  "mixins": ["backroomscam.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": ["minecraft:spyglass", "minecraft:redstone"],
+  "result": { "id": "backroomscam:camcorder", "count": 1 }
+}
