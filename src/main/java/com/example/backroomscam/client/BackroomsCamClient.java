@@ -19,6 +19,8 @@ import org.lwjgl.glfw.GLFWScrollCallback;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -26,14 +28,20 @@ public class BackroomsCamClient implements ClientModInitializer {
     // ---- settings you can tweak ----
     static final int FPS = 20;                     // video frame rate (the game only gives us 20 new frames a second)
     static final int MAX_WIDTH = 1280;             // video is shrunk to fit this width: smoother + smaller files
-    static final boolean RECORD_AUDIO = true;      // record the microphone
-    static final String MIC_DEVICE_HINT = "";      // "" = default microphone. On Windows, "Stereo Mix" records game sound if you enable it.
+    static final boolean RECORD_MIC = true;        // record your microphone
+    static final boolean RECORD_GAME_AUDIO = true; // record game sound + other players' Simple Voice Chat voices
+    static final String MIC_DEVICE_HINT = "";      // "" = default microphone
+    // Game sound and voice chat are recorded by listening to a "what you hear" input device.
+    // On Windows that is "Stereo Mix" (turn it on in Sound settings > Recording). Other names: "CABLE Output", "Loopback".
+    static final String GAME_AUDIO_DEVICE_HINT = "Stereo Mix";
+    static final float MIC_GAIN = 1.0f;
+    static final float GAME_GAIN = 1.0f;
     static final boolean PIXELS_ARE_ABGR = false;  // set true if red and blue look swapped in the video
 
     // ---- state ----
     public static boolean cameraUp = false;        // camera raised (zoomed, overlay on)
     public static boolean recording = false;
-    public static boolean micOn = false;
+    public static String audioLabel = "NO AUDIO";
     public static float zoom = 0f;                 // 0..1 raise animation
     public static float zoomLevel = 0.75f;         // 0..1 set with the scroll wheel
     public static float zoomSmooth = 0.75f;        // smoothed zoomLevel
@@ -146,19 +154,34 @@ public class BackroomsCamClient implements ClientModInitializer {
             mc.player.displayClientMessage(Component.literal("Camcorder: couldn't create output folder"), true);
             return;
         }
-        MicCapture mic = RECORD_AUDIO ? MicCapture.tryStart(MIC_DEVICE_HINT) : null;
-        if (RECORD_AUDIO && mic == null) {
-            mc.player.displayClientMessage(Component.literal("Camcorder: no microphone available, recording video only"), true);
+        List<Recorder.AudioSource> sources = new ArrayList<>();
+        List<Float> gains = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        if (RECORD_MIC) {
+            MicCapture mic = MicCapture.open(MIC_DEVICE_HINT, true);
+            if (mic != null) { sources.add(mic); gains.add(MIC_GAIN); labels.add("MIC"); }
+            else mc.player.displayClientMessage(Component.literal("Camcorder: no microphone found"), false);
         }
-        recorder = new Recorder(recFile, FPS, mic, MicCapture.RATE);
-        micOn = mic != null;
+        if (RECORD_GAME_AUDIO) {
+            MicCapture game = MicCapture.open(GAME_AUDIO_DEVICE_HINT, false);
+            if (game != null) { sources.add(game); gains.add(GAME_GAIN); labels.add("GAME"); }
+            else mc.player.displayClientMessage(Component.literal("Camcorder: game audio device \"" + GAME_AUDIO_DEVICE_HINT
+                    + "\" not found. Audio inputs I can see: " + String.join(", ", MicCapture.listInputs())), false);
+        }
+        Recorder.AudioSource audio = null;
+        if (!sources.isEmpty()) {
+            float[] g = new float[gains.size()];
+            for (int i = 0; i < g.length; i++) g[i] = gains.get(i);
+            audio = new MixedAudio(sources, g);
+        }
+        audioLabel = labels.isEmpty() ? "NO AUDIO" : String.join("+", labels);
+        recorder = new Recorder(recFile, FPS, audio, MicCapture.RATE);
         recStartMs = System.currentTimeMillis();
         recording = true;
     }
 
     private void stopRecording(Minecraft mc) {
         recording = false;
-        micOn = false;
         Recorder r = recorder;
         recorder = null;
         if (r == null) return;
