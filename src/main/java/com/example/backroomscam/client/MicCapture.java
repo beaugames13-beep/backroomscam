@@ -37,7 +37,7 @@ public class MicCapture implements Recorder.AudioSource {
     }
 
     /**
-     * @param deviceHint part of the input device's name (case-insensitive), e.g. "Stereo Mix". Empty = default input.
+     * @param deviceHint part of the input device's name (case-insensitive), e.g. "Stereo Mix". Several names can be separated by "|". Empty = default input.
      * @param allowDefault if the named device isn't found, fall back to the default microphone
      * @return null if nothing usable was found
      */
@@ -65,15 +65,28 @@ public class MicCapture implements Recorder.AudioSource {
     private static TargetDataLine findLine(DataLine.Info info, String hint, boolean allowDefault) throws LineUnavailableException {
         boolean named = hint != null && !hint.isBlank();
         if (named) {
-            String h = hint.toLowerCase();
-            for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
-                if (!mi.getName().toLowerCase().contains(h)) continue;
-                Mixer m = AudioSystem.getMixer(mi);
-                if (m.isLineSupported(info)) return (TargetDataLine) m.getLine(info);
+            // several names can be given, separated by "|": the first one that exists is used
+            for (String part : hint.split("\\|")) {
+                String h = part.trim().toLowerCase();
+                if (h.isEmpty()) continue;
+                for (Mixer.Info mi : AudioSystem.getMixerInfo()) {
+                    if (!mi.getName().toLowerCase().contains(h)) continue;
+                    Mixer m = AudioSystem.getMixer(mi);
+                    if (m.isLineSupported(info)) return (TargetDataLine) m.getLine(info);
+                }
             }
             if (!allowDefault) return null;
         }
         return AudioSystem.isLineSupported(info) ? (TargetDataLine) AudioSystem.getLine(info) : null;
+    }
+
+    /** Loudest sample (0..32768) in a chunk of 16-bit little-endian PCM. */
+    static int peak(byte[] pcm) {
+        int peak = 0;
+        for (int i = 0; i + 1 < pcm.length; i += 2) {
+            peak = Math.max(peak, Math.abs((short) ((pcm[i] & 0xFF) | (pcm[i + 1] << 8))));
+        }
+        return peak;
     }
 
     /** Names of audio input devices Java can see (so you know what to put in the hint). */

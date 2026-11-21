@@ -28,14 +28,6 @@ public class BackroomsCamClient implements ClientModInitializer {
     // ---- settings you can tweak ----
     static final int FPS = 20;                     // video frame rate (the game only gives us 20 new frames a second)
     static final int MAX_WIDTH = 1280;             // video is shrunk to fit this width: smoother + smaller files
-    static final boolean RECORD_MIC = true;        // record your microphone
-    static final boolean RECORD_GAME_AUDIO = true; // record game sound + other players' Simple Voice Chat voices
-    static final String MIC_DEVICE_HINT = "";      // "" = default microphone
-    // Game sound and voice chat are recorded by listening to a "what you hear" input device.
-    // On Windows that is "Stereo Mix" (turn it on in Sound settings > Recording). Other names: "CABLE Output", "Loopback".
-    static final String GAME_AUDIO_DEVICE_HINT = "Stereo Mix";
-    static final float MIC_GAIN = 1.0f;
-    static final float GAME_GAIN = 1.0f;
     static final boolean PIXELS_ARE_ABGR = false;  // set true if red and blue look swapped in the video
 
     // ---- state ----
@@ -64,6 +56,10 @@ public class BackroomsCamClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        CamConfig.load(net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir());
+        net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback.EVENT
+                .register((dispatcher, registryAccess) -> CamCommands.register(dispatcher));
+
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
 
         // Camera mode owns both buttons: no mining/interacting while holding the camcorder.
@@ -157,16 +153,15 @@ public class BackroomsCamClient implements ClientModInitializer {
         List<Recorder.AudioSource> sources = new ArrayList<>();
         List<Float> gains = new ArrayList<>();
         List<String> labels = new ArrayList<>();
-        if (RECORD_MIC) {
-            MicCapture mic = MicCapture.open(MIC_DEVICE_HINT, true);
-            if (mic != null) { sources.add(mic); gains.add(MIC_GAIN); labels.add("MIC"); }
-            else mc.player.displayClientMessage(Component.literal("Camcorder: no microphone found"), false);
+        if (CamConfig.recordMic) {
+            MicCapture mic = MicCapture.open(CamConfig.micDevice, true);
+            if (mic != null) { sources.add(mic); gains.add(CamConfig.micGain); labels.add("MIC"); }
+            else mc.player.displayClientMessage(Component.literal("Camcorder: no microphone found (see /camcorder devices)"), false);
         }
-        if (RECORD_GAME_AUDIO) {
-            MicCapture game = MicCapture.open(GAME_AUDIO_DEVICE_HINT, false);
-            if (game != null) { sources.add(game); gains.add(GAME_GAIN); labels.add("GAME"); }
-            else mc.player.displayClientMessage(Component.literal("Camcorder: game audio device \"" + GAME_AUDIO_DEVICE_HINT
-                    + "\" not found. Audio inputs I can see: " + String.join(", ", MicCapture.listInputs())), false);
+        if (CamConfig.recordGame) {
+            MicCapture game = MicCapture.open(CamConfig.gameDevice, false);
+            if (game != null) { sources.add(game); gains.add(CamConfig.gameGain); labels.add("GAME"); }
+            else mc.player.displayClientMessage(Component.literal("Camcorder: game sound device not found. Run /camcorder devices, then /camcorder game <number>"), false);
         }
         Recorder.AudioSource audio = null;
         if (!sources.isEmpty()) {
